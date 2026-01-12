@@ -1,4 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 db = SQLAlchemy()
 
@@ -24,4 +25,5 @@ class PacienteEspera(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(60), nullable=False)
     numero_afiliacion = db.Column(db.String(8), unique=True, nullable=False)
+    creado = db.Column(db.DateTime, nullable=False, default=datetime.now)
     estado = db.Column(db.String(1), nullable=False)

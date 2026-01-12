@@ -1,3 +1,5 @@
 flask==3.0.0
 flask-sqlalchemy
 psycopg2-binary
+flask-cors
+pytz

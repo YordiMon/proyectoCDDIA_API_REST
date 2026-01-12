@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
 from .models import db, Paciente, PacienteEspera
 from datetime import datetime
+import pytz
 
-# Creamos el Blueprint para agrupar las rutas
 api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/crear_paciente', methods=['POST'])
@@ -79,7 +79,23 @@ def crear_paciente_en_espera():
 @api_bp.route('/lista_pacientes_en_espera', methods=['GET'])
 def obtener_pacientes_en_espera():
     lista_pacientes = PacienteEspera.query.all()
-    resultado = [{"id": p.id, "nombre": p.nombre, "numero_afiliacion": p.numero_afiliacion, "estado": p.estado} for p in lista_pacientes]
+    
+    # Definir la zona horaria de Hermosillo
+    tz_hermosillo = pytz.timezone('America/Hermosillo')
+    
+    resultado = []
+    for p in lista_pacientes:
+        fecha_utc = p.creado.replace(tzinfo=pytz.utc)
+        fecha_local = fecha_utc.astimezone(tz_hermosillo)
+        fecha_formateada = fecha_local.strftime('%d/%m/%Y %H:%M')
+        resultado.append({
+            "id": p.id,
+            "nombre": p.nombre,
+            "numero_afiliacion": p.numero_afiliacion,
+            "estado": p.estado,
+            "creado": fecha_formateada 
+        })
+        
     return jsonify(resultado)
 
 @api_bp.route('/atender_paciente/<int:id>', methods=['PUT'])
