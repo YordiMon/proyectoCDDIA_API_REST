@@ -78,16 +78,20 @@ def crear_paciente_en_espera():
 
 @api_bp.route('/lista_pacientes_en_espera', methods=['GET'])
 def obtener_pacientes_en_espera():
-    lista_pacientes = PacienteEspera.query.all()
+    lista_pacientes = PacienteEspera.query.order_by(PacienteEspera.creado.asc()).all()
     
-    # Definir la zona horaria de Hermosillo
     tz_hermosillo = pytz.timezone('America/Hermosillo')
     
     resultado = []
     for p in lista_pacientes:
-        fecha_utc = p.creado.replace(tzinfo=pytz.utc)
+        if p.creado.tzinfo is None:
+            fecha_utc = p.creado.replace(tzinfo=pytz.utc)
+        else:
+            fecha_utc = p.creado
+
         fecha_local = fecha_utc.astimezone(tz_hermosillo)
-        fecha_formateada = fecha_local.strftime('%d/%m/%Y %H:%M')
+        fecha_formateada = fecha_local.strftime('%H:%M hrs')
+
         resultado.append({
             "id": p.id,
             "nombre": p.nombre,
