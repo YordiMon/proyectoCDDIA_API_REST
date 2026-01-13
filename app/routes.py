@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from .models import db, Paciente, PacienteEspera
+from .models import Consulta, db, Paciente, PacienteEspera
 from datetime import datetime
 
 # Creamos el Blueprint para agrupar las rutas
@@ -22,17 +22,7 @@ def crear_paciente():
         nuevo_paciente = Paciente(
             nombre=data['nombre'],
             numero_afiliacion=n_afiliacion,
-            fecha_nacimiento=fecha_dt,
-            sexo=data['sexo'],
-            tipo_sangre=data['tipo_sangre'],
-            recibe_donaciones=data['recibe_donaciones'],
-            direccion=data['direccion'],
-            celular=data['celular'],
-            contacto_emergencia=data['contacto_emergencia'],
-            enfermedades=data.get('enfermedades'),
-            alergias=data.get('alergias'),
-            cirugias_previas=data.get('cirugias_previas'),
-            medicamentos_actuales=data.get('medicamentos_actuales')
+            
         )
         db.session.add(nuevo_paciente)
         db.session.commit()
@@ -47,11 +37,7 @@ def obtener_pacientes():
     for p in lista_pacientes:
         resultado.append({
             "id": p.id, "nombre": p.nombre, "numero_afiliacion": p.numero_afiliacion,
-            "fecha_nacimiento": p.fecha_nacimiento.strftime('%Y-%m-%d'),
-            "sexo": p.sexo, "tipo_sangre": p.tipo_sangre, "recibe_donaciones": p.recibe_donaciones,
-            "direccion": p.direccion, "celular": p.celular, "contacto_emergencia": p.contacto_emergencia,
-            "enfermedades": p.enfermedades, "alergias": p.alergias, 
-            "cirugias_previas": p.cirugias_previas, "medicamentos_actuales": p.medicamentos_actuales,
+           
         })
     return jsonify(resultado)
 
@@ -94,3 +80,108 @@ def atender_paciente(id):
         return jsonify({"mensaje": f"Estado del paciente {paciente.nombre} actualizado a 2", "id": paciente.id, "nuevo_estado": paciente.estado}), 200
     else:
         return jsonify({"mensaje": "El paciente ya tenía un estado diferente a 1"}), 400
+    
+# rutas para consultas
+
+#crear consulta
+@api_bp.route('', methods=['POST'])
+def crear_consulta():
+    data = request.json
+
+    nueva_consulta = Consulta(
+        paciente_id=data['paciente_id'],
+        fecha_consulta=datetime.fromisoformat(data['fecha_consulta']),
+        motivo=data['motivo'],
+        sintonmas=data.get('sintonmas'),
+        tiempo_enfermedad=data.get('tiempo_enfermedad'),
+        presion=data.get('presion'),
+        frecuencia_cardiaca=data.get('frecuencia_cardiaca'),
+        frecuencia_respiratoria=data.get('frecuencia_respiratoria'),
+        temperatura=data.get('temperatura'),
+        peso=data.get('peso'),
+        talla=data.get('talla'),
+        diagnostico=data.get('diagnostico'),
+        medicamentos_recetados=data.get('medicamentos_recetados'),
+        observaciones=data.get('observaciones')
+    )
+
+    db.session.add(nueva_consulta)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Consulta creada",
+        "consulta_id": nueva_consulta.id
+    }), 201
+
+#consultar consultas por paciente
+
+@api_bp.route('/consultas/paciente/<int:paciente_id>', methods=['GET'])
+def consultas_por_paciente(paciente_id):
+    consultas = Consulta.query.filter_by(
+        paciente_id=paciente_id
+    ).order_by(Consulta.fecha_consulta.desc()).all()
+
+    return jsonify([
+        {
+            "id": c.id,
+            "fecha_consulta": c.fecha_consulta.isoformat(),
+            "motivo": c.motivo,
+            "diagnostico": c.diagnostico
+        } for c in consultas
+    ])
+
+#obtener detalles de una consulta
+@api_bp.route('/consultas/<int:consulta_id>', methods=['GET'])
+def obtener_consulta(consulta_id):
+    consulta = Consulta.query.get_or_404(consulta_id)
+
+    return jsonify({
+        "id": consulta.id,
+        "paciente_id": consulta.paciente_id,
+        "fecha_consulta": consulta.fecha_consulta.isoformat(),
+        "motivo": consulta.motivo,
+        "sintonmas": consulta.sintonmas,
+        "tiempo_enfermedad": consulta.tiempo_enfermedad,
+        "presion": consulta.presion,
+        "frecuencia_cardiaca": consulta.frecuencia_cardiaca,
+        "frecuencia_respiratoria": consulta.frecuencia_respiratoria,
+        "temperatura": consulta.temperatura,
+        "peso": consulta.peso,
+        "talla": consulta.talla,
+        "diagnostico": consulta.diagnostico,
+        "medicamentos_recetados": consulta.medicamentos_recetados,
+        "observaciones": consulta.observaciones
+    })
+
+#actualizar una consulta
+@api_bp.route('/consultas/<int:consulta_id>', methods=['PUT'])
+def actualizar_consulta(consulta_id):
+    consulta = Consulta.query.get_or_404(consulta_id)
+    data = request.json
+
+    consulta.motivo = data.get('motivo', consulta.motivo)
+    consulta.sintonmas = data.get('sintonmas', consulta.sintonmas)
+    consulta.tiempo_enfermedad = data.get('tiempo_enfermedad', consulta.tiempo_enfermedad)
+    consulta.presion = data.get('presion', consulta.presion)
+    consulta.frecuencia_cardiaca = data.get('frecuencia_cardiaca', consulta.frecuencia_cardiaca)
+    consulta.frecuencia_respiratoria = data.get('frecuencia_respiratoria', consulta.frecuencia_respiratoria)
+    consulta.temperatura = data.get('temperatura', consulta.temperatura)
+    consulta.peso = data.get('peso', consulta.peso)
+    consulta.talla = data.get('talla', consulta.talla)
+    consulta.diagnostico = data.get('diagnostico', consulta.diagnostico)
+    consulta.medicamentos_recetados = data.get('medicamentos_recetados', consulta.medicamentos_recetados)
+    consulta.observaciones = data.get('observaciones', consulta.observaciones)
+
+    db.session.commit()
+
+    return jsonify({"message": "Consulta actualizada"})
+
+# eliminar una consulta
+@api_bp.route('/consultas/<int:consulta_id>', methods=['DELETE'])
+def eliminar_consulta(consulta_id):
+    consulta = Consulta.query.get_or_404(consulta_id)
+
+    db.session.delete(consulta)
+    db.session.commit()
+
+    return jsonify({"message": "Consulta eliminada"})
