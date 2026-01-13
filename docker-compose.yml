@@ -10,6 +10,7 @@ services:
       - DATABASE_URL=postgresql://usuario:password@db:5432/proyectoCDDIA_DB
     depends_on:
       - db
+        
 
   # La Base de Datos (PostgreSQL)
   db:
@@ -22,6 +23,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
+      
 volumes:
   postgres_data:
