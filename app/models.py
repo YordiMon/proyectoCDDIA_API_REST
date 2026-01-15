@@ -20,6 +20,24 @@ class Paciente(db.Model):
     cirugias_previas = db.Column(db.Text, nullable=True)
     medicamentos_actuales = db.Column(db.Text, nullable=True)
 
+class Consulta(db.Model):
+    __tablename__ = 'consultas'
+    id = db.Column(db.Integer, primary_key=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey('pacientes.id'), nullable=False)
+    fecha_consulta = db.Column(db.DateTime, nullable=False)
+    motivo = db.Column(db.Text, nullable=False)
+    sintomas = db.Column(db.Text, nullable=True)
+    tiempo_enfermedad = db.Column(db.Text, nullable=True)
+    presion = db.Column(db.String(20), nullable=True)
+    frecuencia_cardiaca = db.Column(db.String(20), nullable=True)
+    frecuencia_respiratoria = db.Column(db.String(20), nullable=True)
+    temperatura = db.Column(db.String(20), nullable=True)
+    peso = db.Column(db.String(20), nullable=True)
+    talla = db.Column(db.String(20), nullable=True)
+    diagnostico = db.Column(db.Text, nullable=True)
+    medicamentos_recetados = db.Column(db.Text, nullable=True)
+    observaciones = db.Column(db.Text, nullable=True)
+
 class PacienteEspera(db.Model):
     __tablename__ = 'lista_espera'
     id = db.Column(db.Integer, primary_key=True)
