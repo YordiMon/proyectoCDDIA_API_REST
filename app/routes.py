@@ -78,11 +78,17 @@ def crear_paciente_en_espera():
 
 @api_bp.route('/lista_pacientes_en_espera', methods=['GET'])
 def obtener_pacientes_en_espera():
-    lista_pacientes = PacienteEspera.query.order_by(PacienteEspera.creado.asc()).all()
+    # 1. Obtener pacientes filtrados (Estado 1 y 2)
+    lista_pacientes = PacienteEspera.query.filter(
+        PacienteEspera.estado.in_(['1', '2'])
+    ).order_by(PacienteEspera.creado.asc()).all()
+    
+    # 2. Contar cuántos están SOLO en espera (Estado 1) para el resumen
+    conteo_espera = PacienteEspera.query.filter_by(estado='1').count()
     
     tz_hermosillo = pytz.timezone('America/Hermosillo')
     
-    resultado = []
+    pacientes_json = []
     for p in lista_pacientes:
         if p.creado.tzinfo is None:
             fecha_utc = p.creado.replace(tzinfo=pytz.utc)
@@ -92,7 +98,7 @@ def obtener_pacientes_en_espera():
         fecha_local = fecha_utc.astimezone(tz_hermosillo)
         fecha_formateada = fecha_local.strftime('%H:%M hrs')
 
-        resultado.append({
+        pacientes_json.append({
             "id": p.id,
             "nombre": p.nombre,
             "numero_afiliacion": p.numero_afiliacion,
@@ -100,7 +106,24 @@ def obtener_pacientes_en_espera():
             "creado": fecha_formateada 
         })
         
-    return jsonify(resultado)
+    # Devolvemos estructura completa
+    return jsonify({
+        "resumen": {
+            "total_espera": conteo_espera
+        },
+        "pacientes": pacientes_json
+    })
+
+@api_bp.route('/quitar_paciente/<int:id>', methods=['PUT'])
+def quitar_paciente(id):
+    paciente = PacienteEspera.query.get(id)
+    if not paciente:
+        return jsonify({"error": "Paciente no encontrado"}), 404
+
+    # Cambiamos el estado a 3 (Inactivo/Quitado)
+    paciente.estado = "3"
+    db.session.commit()
+    return jsonify({"mensaje": f"Paciente {paciente.nombre} removido de la lista", "id": paciente.id}), 200
 
 @api_bp.route('/atender_paciente/<int:id>', methods=['PUT'])
 def atender_paciente(id):
