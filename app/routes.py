@@ -1,13 +1,17 @@
+from pickle import GET
 from flask import Blueprint, request, jsonify
 from .models import db, Paciente, PacienteEspera
+from . import models
 from datetime import datetime
 import pytz
 
 api_bp = Blueprint('api', __name__)
 
+#rutas para crear pacientes
 @api_bp.route('/crear_paciente', methods=['POST'])
 def crear_paciente():
     data = request.get_json()
+   
     n_afiliacion = data.get('numero_afiliacion')
     paciente_existente = Paciente.query.filter_by(numero_afiliacion=n_afiliacion).first()
 
@@ -16,9 +20,15 @@ def crear_paciente():
             "error": "Conflict",
             "mensaje": f"El número de afiliación {n_afiliacion} ya está registrado a nombre de {paciente_existente.nombre}."
         }), 409
+    
 
+    
     try:
-        fecha_dt = datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date()
+        fecha_nacimiento = data.get('fecha_nacimiento')
+        if not fecha_nacimiento:
+            return jsonify({"error": "El campo 'fecha_nacimiento' es obligatorio."}), 400
+
+        fecha_dt = datetime.strptime(fecha_nacimiento, '%Y-%m-%d').date()
         nuevo_paciente = Paciente(
             nombre=data['nombre'],
             numero_afiliacion=n_afiliacion,
@@ -40,6 +50,7 @@ def crear_paciente():
     except Exception as e:
         return jsonify({"error": "Error al procesar la fecha o datos", "detalle": str(e)}), 400
 
+#ruta para obtener lista de pacientes
 @api_bp.route('/lista_pacientes', methods=['GET'])
 def obtener_pacientes():
     lista_pacientes = Paciente.query.all()
@@ -55,6 +66,7 @@ def obtener_pacientes():
         })
     return jsonify(resultado)
 
+#rutas para lista de espera
 @api_bp.route('/crear_paciente_en_espera', methods=['POST'])
 def crear_paciente_en_espera():
     data = request.get_json()
@@ -76,6 +88,7 @@ def crear_paciente_en_espera():
         db.session.commit()
         return jsonify({"mensaje": "Nuevo paciente registrado con éxito", "id": nuevo_paciente.id, "estado": "nuevo"}), 201
 
+#ruta para obtener lista de pacientes en espera
 @api_bp.route('/lista_pacientes_en_espera', methods=['GET'])
 def obtener_pacientes_en_espera():
     lista_pacientes = PacienteEspera.query.order_by(PacienteEspera.creado.asc()).all()
@@ -102,6 +115,7 @@ def obtener_pacientes_en_espera():
         
     return jsonify(resultado)
 
+#ruta para actualizar estado de paciente en espera
 @api_bp.route('/atender_paciente/<int:id>', methods=['PUT'])
 def atender_paciente(id):
     paciente = PacienteEspera.query.get(id)
@@ -114,3 +128,140 @@ def atender_paciente(id):
         return jsonify({"mensaje": f"Estado del paciente {paciente.nombre} actualizado a 2", "id": paciente.id, "nuevo_estado": paciente.estado}), 200
     else:
         return jsonify({"mensaje": "El paciente ya tenía un estado diferente a 1"}), 400
+    
+#Rutas para consultas
+
+#crear consulta
+@api_bp.route('/consultas', methods=['POST'])
+def crear_consulta():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Cuerpo JSON vacío o malformado"}), 400
+
+    # Campos obligatorios (fecha_consulta opcional; se usará la fecha actual si falta)
+    faltantes = [k for k in ("paciente_id", "motivo") if not data.get(k)]
+    if faltantes:
+        return jsonify({"error": "Faltan campos obligatorios", "faltantes": faltantes}), 400
+
+    fecha_raw = data.get('fecha_consulta')
+    if fecha_raw:
+        try:
+            fecha_dt = datetime.fromisoformat(fecha_raw)
+        except Exception as e:
+            return jsonify({"error": "Formato de 'fecha_consulta' inválido. Use ISO 8601.", "detalle": str(e)}), 400
+    else:
+        fecha_dt = datetime.utcnow()
+
+    nueva_consulta = models.Consulta(
+        paciente_id=data.get('paciente_id'),
+        fecha_consulta=fecha_dt,
+        motivo=data.get('motivo'),
+        sintomas=data.get('sintomas'),
+        tiempo_enfermedad=data.get('tiempo_enfermedad'),
+        presion=data.get('presion'),
+        frecuencia_cardiaca=data.get('frecuencia_cardiaca'),
+        frecuencia_respiratoria=data.get('frecuencia_respiratoria'),
+        temperatura=data.get('temperatura'),
+        peso=data.get('peso'),
+        talla=data.get('talla'),
+        diagnostico=data.get('diagnostico'),
+        medicamentos_recetados=data.get('medicamentos_recetados'),
+        observaciones=data.get('observaciones')
+    )
+
+    db.session.add(nueva_consulta)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Consulta creada",
+        "consulta_id": nueva_consulta.id
+    }), 201
+
+#consultar consultas por paciente
+
+@api_bp.route('/consultas/paciente/<int:paciente_id>', methods=['GET'])
+def consultas_por_paciente(paciente_id):
+    consultas = models.Consulta.query.filter_by(
+        paciente_id=paciente_id
+    ).order_by(models.Consulta.fecha_consulta.desc()).all()
+
+    return jsonify([
+        {
+            "id": c.id,
+            "fecha_consulta": c.fecha_consulta.isoformat(),
+            "motivo": c.motivo,
+            "diagnostico": c.diagnostico
+        } for c in consultas
+    ])
+
+#obtener detalles de una consulta
+@api_bp.route('/consultas/<int:consulta_id>', methods=['GET'])
+def obtener_consulta(consulta_id):
+    consulta = models.Consulta.query.get_or_404(consulta_id)
+
+    return jsonify({
+        "id": consulta.id,
+        "paciente_id": consulta.paciente_id,
+        "fecha_consulta": consulta.fecha_consulta.isoformat(),
+        "motivo": consulta.motivo,
+        "sintomas": consulta.sintomas,
+        "tiempo_enfermedad": consulta.tiempo_enfermedad,
+        "presion": consulta.presion,
+        "frecuencia_cardiaca": consulta.frecuencia_cardiaca,
+        "frecuencia_respiratoria": consulta.frecuencia_respiratoria,
+        "temperatura": consulta.temperatura,
+        "peso": consulta.peso,
+        "talla": consulta.talla,
+        "diagnostico": consulta.diagnostico,
+        "medicamentos_recetados": consulta.medicamentos_recetados,
+        "observaciones": consulta.observaciones
+    })
+
+#actualizar una consulta
+@api_bp.route('/consultas/<int:consulta_id>', methods=['PUT'])
+def actualizar_consulta(consulta_id):
+    consulta = models.Consulta.query.get_or_404(consulta_id)
+    data = request.json
+
+    consulta.motivo = data.get('motivo', consulta.motivo)
+    consulta.sintomas = data.get('sintomas', consulta.sintomas)
+    consulta.tiempo_enfermedad = data.get('tiempo_enfermedad', consulta.tiempo_enfermedad)
+    consulta.presion = data.get('presion', consulta.presion)
+    consulta.frecuencia_cardiaca = data.get('frecuencia_cardiaca', consulta.frecuencia_cardiaca)
+    consulta.frecuencia_respiratoria = data.get('frecuencia_respiratoria', consulta.frecuencia_respiratoria)
+    consulta.temperatura = data.get('temperatura', consulta.temperatura)
+    consulta.peso = data.get('peso', consulta.peso)
+    consulta.talla = data.get('talla', consulta.talla)
+    consulta.diagnostico = data.get('diagnostico', consulta.diagnostico)
+    consulta.medicamentos_recetados = data.get('medicamentos_recetados', consulta.medicamentos_recetados)
+    consulta.observaciones = data.get('observaciones', consulta.observaciones)
+
+    db.session.commit()
+
+    return jsonify({"message": "Consulta actualizada"})
+
+# eliminar una consulta
+@api_bp.route('/consultas/<int:consulta_id>', methods=['DELETE'])
+def eliminar_consulta(consulta_id):
+    consulta = models.Consulta.query.get_or_404(consulta_id)
+
+    db.session.delete(consulta)
+    db.session.commit()
+
+    return jsonify({"message": "Consulta eliminada"})
+
+
+#rutas para pacientes
+#buscar nombre de paciente o numero de afiliacion en la tabla pacientes
+
+@api_bp.route('/paciente_existe/<string:numero_afiliacion>', methods=['GET'])
+def paciente_existe(numero_afiliacion):
+    paciente = Paciente.query.filter_by(numero_afiliacion=numero_afiliacion).first()
+    if paciente:
+        return jsonify({
+            "existe": True,
+            "nombre": paciente.nombre
+        })
+    else:
+        return jsonify({"existe": False})
