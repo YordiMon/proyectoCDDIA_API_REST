@@ -1,3 +1,4 @@
+from pickle import GET
 from flask import Blueprint, request, jsonify
 from .models import db, Paciente, PacienteEspera
 from . import models
@@ -6,6 +7,7 @@ import pytz
 
 api_bp = Blueprint('api', __name__)
 
+#rutas para crear pacientes
 @api_bp.route('/crear_paciente', methods=['POST'])
 def crear_paciente():
     data = request.get_json()
@@ -48,6 +50,7 @@ def crear_paciente():
     except Exception as e:
         return jsonify({"error": "Error al procesar la fecha o datos", "detalle": str(e)}), 400
 
+#ruta para obtener lista de pacientes
 @api_bp.route('/lista_pacientes', methods=['GET'])
 def obtener_pacientes():
     lista_pacientes = Paciente.query.all()
@@ -63,6 +66,7 @@ def obtener_pacientes():
         })
     return jsonify(resultado)
 
+#rutas para lista de espera
 @api_bp.route('/crear_paciente_en_espera', methods=['POST'])
 def crear_paciente_en_espera():
     data = request.get_json()
@@ -84,6 +88,7 @@ def crear_paciente_en_espera():
         db.session.commit()
         return jsonify({"mensaje": "Nuevo paciente registrado con éxito", "id": nuevo_paciente.id, "estado": "nuevo"}), 201
 
+#ruta para obtener lista de pacientes en espera
 @api_bp.route('/lista_pacientes_en_espera', methods=['GET'])
 def obtener_pacientes_en_espera():
     lista_pacientes = PacienteEspera.query.order_by(PacienteEspera.creado.asc()).all()
@@ -110,6 +115,7 @@ def obtener_pacientes_en_espera():
         
     return jsonify(resultado)
 
+#ruta para actualizar estado de paciente en espera
 @api_bp.route('/atender_paciente/<int:id>', methods=['PUT'])
 def atender_paciente(id):
     paciente = PacienteEspera.query.get(id)
@@ -123,7 +129,7 @@ def atender_paciente(id):
     else:
         return jsonify({"mensaje": "El paciente ya tenía un estado diferente a 1"}), 400
     
-# rutas para consultas
+#Rutas para consultas
 
 #crear consulta
 @api_bp.route('/consultas', methods=['POST'])
@@ -244,3 +250,18 @@ def eliminar_consulta(consulta_id):
     db.session.commit()
 
     return jsonify({"message": "Consulta eliminada"})
+
+
+#rutas para pacientes
+#buscar nombre de paciente o numero de afiliacion en la tabla pacientes
+
+@api_bp.route('/paciente_existe/<string:numero_afiliacion>', methods=['GET'])
+def paciente_existe(numero_afiliacion):
+    paciente = Paciente.query.filter_by(numero_afiliacion=numero_afiliacion).first()
+    if paciente:
+        return jsonify({
+            "existe": True,
+            "nombre": paciente.nombre
+        })
+    else:
+        return jsonify({"existe": False})
