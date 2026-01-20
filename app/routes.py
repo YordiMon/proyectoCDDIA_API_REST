@@ -20,9 +20,7 @@ def crear_paciente():
             "error": "Conflict",
             "mensaje": f"El número de afiliación {n_afiliacion} ya está registrado a nombre de {paciente_existente.nombre}."
         }), 409
-    
-
-    
+        
     try:
         fecha_nacimiento = data.get('fecha_nacimiento')
         if not fecha_nacimiento:
@@ -65,6 +63,27 @@ def obtener_pacientes():
             "cirugias_previas": p.cirugias_previas, "medicamentos_actuales": p.medicamentos_actuales,
         })
     return jsonify(resultado)
+
+#para obtener paciente por numero de afiliacion
+@api_bp.route('/paciente/<numero_afiliacion>', methods=['GET'])
+def obtener_paciente_por_afiliacion(numero_afiliacion):
+    """
+    Obtiene los datos de un paciente por su número de afiliación
+    """
+    try:
+        paciente = models.Paciente.query.filter_by(numero_afiliacion=numero_afiliacion).first()
+        
+        if not paciente:
+            return jsonify({"error": "Paciente no encontrado"}), 404
+        
+        return jsonify({
+            "paciente_id": paciente.id,
+            "nombre": paciente.nombre,
+            "numero_afiliacion": paciente.numero_afiliacion
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"error": "Error al buscar paciente", "detalle": str(e)}), 500
 
 #rutas para lista de espera
 @api_bp.route('/crear_paciente_en_espera', methods=['POST'])
@@ -192,6 +211,7 @@ def consultas_por_paciente(paciente_id):
             "fecha_consulta": c.fecha_consulta.isoformat(),
             "motivo": c.motivo,
             "diagnostico": c.diagnostico
+            
         } for c in consultas
     ])
 
@@ -251,17 +271,21 @@ def eliminar_consulta(consulta_id):
 
     return jsonify({"message": "Consulta eliminada"})
 
-
 #rutas para pacientes
 #buscar nombre de paciente o numero de afiliacion en la tabla pacientes
-
 @api_bp.route('/paciente_existe/<string:numero_afiliacion>', methods=['GET'])
 def paciente_existe(numero_afiliacion):
     paciente = Paciente.query.filter_by(numero_afiliacion=numero_afiliacion).first()
-    if paciente:
+    try:
+        if paciente:
+            return jsonify({
+                "existe": True,
+                "nombre": paciente.nombre
+            }) 
+        else:
+            return jsonify({"existe": False})
+    except Exception as e:
         return jsonify({
-            "existe": True,
-            "nombre": paciente.nombre
-        })
-    else:
-        return jsonify({"existe": False})
+            "error": "Error al verificar paciente",
+            "detalle": str(e)
+        }), 500
