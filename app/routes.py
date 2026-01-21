@@ -205,18 +205,38 @@ def crear_consulta():
 
 @api_bp.route('/consultas/paciente/<int:paciente_id>', methods=['GET'])
 def consultas_por_paciente(paciente_id):
-    consultas = models.Consulta.query.filter_by(
-        paciente_id=paciente_id
-    ).order_by(models.Consulta.fecha_consulta.desc()).all()
+    # Realizamos un join para traer los datos de la consulta y el nombre del paciente
+    resultados = db.session.query(models.Consulta, models.Paciente.nombre)\
+        .join(models.Paciente, models.Consulta.paciente_id == models.Paciente.id)\
+        .filter(models.Consulta.paciente_id == paciente_id)\
+        .order_by(models.Consulta.fecha_consulta.desc())\
+        .all()
 
-    return jsonify([
-        {
-            "id": c.id,
-            "fecha_consulta": c.fecha_consulta.isoformat(),
-            "motivo": c.motivo,
-            "diagnostico": c.diagnostico
-        } for c in consultas
-    ])
+    if not resultados:
+        return jsonify({"message": "No se encontraron consultas para este paciente"}), 404
+
+    lista_consultas = []
+    for consulta, nombre_paciente in resultados:
+        lista_consultas.append({
+            "id": consulta.id,
+            "paciente_id": consulta.paciente_id,
+            "nombre_paciente": nombre_paciente, # <--- El dato extra que pediste
+            "fecha_consulta": consulta.fecha_consulta.isoformat(),
+            "motivo": consulta.motivo,
+            "sintomas": consulta.sintomas,
+            "tiempo_enfermedad": consulta.tiempo_enfermedad,
+            "presion": consulta.presion,
+            "frecuencia_cardiaca": consulta.frecuencia_cardiaca,
+            "frecuencia_respiratoria": consulta.frecuencia_respiratoria,
+            "temperatura": consulta.temperatura,
+            "peso": consulta.peso,
+            "talla": consulta.talla,
+            "diagnostico": consulta.diagnostico,
+            "medicamentos_recetados": consulta.medicamentos_recetados,
+            "observaciones": consulta.observaciones
+        })
+
+    return jsonify(lista_consultas)
 
 #obtener detalles de una consulta
 @api_bp.route('/consultas/<int:consulta_id>', methods=['GET'])
