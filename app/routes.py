@@ -175,35 +175,43 @@ def atender_paciente(id):
     
 #Rutas para consultas
 
-#crear consulta
+# Crear consulta
 @api_bp.route('/consultas', methods=['POST'])
 def crear_consulta():
     data = request.get_json()
+    # Definimos la zona horaria de Sonora
+    sonora_tz = pytz.timezone('America/Hermosillo')
 
     if not data:
-        return jsonify({"error": "Cuerpo JSON vacío o malformado"}), 400
+        return jsonify({"error": "Cuerpo JSON vacío"}), 400
 
-    # Campos obligatorios (fecha_consulta opcional; se usará la fecha actual si falta)
-    faltantes = [k for k in ("paciente_id", "motivo") if not data.get(k)]
-    if faltantes:
-        return jsonify({"error": "Faltan campos obligatorios", "faltantes": faltantes}), 400
+    # Validación de campos obligatorios
+    paciente_id = data.get('paciente_id')
+    motivo = data.get('motivo')
+    if not paciente_id or not motivo:
+        return jsonify({"error": "paciente_id y motivo son requeridos"}), 400
 
+    # --- PROCESAMIENTO DE FECHA LOCAL ---
     fecha_raw = data.get('fecha_consulta')
-    if fecha_raw:
-        try:
-            fecha_dt = datetime.fromisoformat(fecha_raw)
-        except Exception as e:
-            return jsonify({"error": "Formato de 'fecha_consulta' inválido. Use ISO 8601.", "detalle": str(e)}), 400
-    else:
-        fecha_dt = datetime.utcnow()
+    try:
+        if fecha_raw:
+            # Eliminamos la 'Z' (si existe) para que fromisoformat no la mande a UTC
+            fecha_dt = datetime.fromisoformat(fecha_raw.replace('Z', ''))
+            # Localizamos la fecha como "Hora de Sonora"
+            fecha_dt = sonora_tz.localize(fecha_dt)
+        else:
+            # Si no hay fecha, capturamos el "Ahora" de Sonora directamente
+            fecha_dt = datetime.now(sonora_tz)
+    except Exception as e:
+        return jsonify({"error": "Formato de fecha inválido", "detalle": str(e)}), 400
 
     nueva_consulta = models.Consulta(
-        paciente_id=data.get('paciente_id'),
-        fecha_consulta=fecha_dt,
-        motivo=data.get('motivo'),
+        paciente_id=paciente_id,
+        fecha_consulta=fecha_dt, # SQLAlchemy guardará con la info de zona horaria
+        motivo=motivo,
         sintomas=data.get('sintomas'),
         tiempo_enfermedad=data.get('tiempo_enfermedad'),
-        presion=data.get('presion'),
+        presion=data.get('presion'), # Recibido desde consultaData en React
         frecuencia_cardiaca=data.get('frecuencia_cardiaca'),
         frecuencia_respiratoria=data.get('frecuencia_respiratoria'),
         temperatura=data.get('temperatura'),
@@ -214,19 +222,24 @@ def crear_consulta():
         observaciones=data.get('observaciones')
     )
 
-    db.session.add(nueva_consulta)
-    db.session.commit()
-
-    return jsonify({
-        "message": "Consulta creada",
-        "consulta_id": nueva_consulta.id
-    }), 201
+    try:
+        db.session.add(nueva_consulta)
+        db.session.commit()
+        return jsonify({
+            "message": "Consulta creada exitosamente",
+            "consulta_id": nueva_consulta.id
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error de base de datos", "detalle": str(e)}), 500
 
 #consultar consultas por paciente
 
 @api_bp.route('/consultas/paciente/<int:paciente_id>', methods=['GET'])
 def consultas_por_paciente(paciente_id):
-    # Realizamos un join para traer los datos de la consulta y el nombre del paciente
+    # Zona horaria de Hermosillo
+    sonora_tz = pytz.timezone('America/Hermosillo')
+
     resultados = db.session.query(models.Consulta, models.Paciente.nombre)\
         .join(models.Paciente, models.Consulta.paciente_id == models.Paciente.id)\
         .filter(models.Consulta.paciente_id == paciente_id)\
@@ -238,11 +251,21 @@ def consultas_por_paciente(paciente_id):
 
     lista_consultas = []
     for consulta, nombre_paciente in resultados:
+        # 1. Obtener la fecha de la base de datos
+        fecha_db = consulta.fecha_consulta
+        
+        # 2. Si la fecha no tiene zona horaria (naive), le asignamos la de Sonora
+        # Si ya la tiene, la convertimos para asegurar que el offset sea -07:00
+        if fecha_db.tzinfo is None:
+            fecha_local = sonora_tz.localize(fecha_db)
+        else:
+            fecha_local = fecha_db.astimezone(sonora_tz)
+
         lista_consultas.append({
             "id": consulta.id,
             "paciente_id": consulta.paciente_id,
-            "nombre_paciente": nombre_paciente, # <--- El dato extra que pediste
-            "fecha_consulta": consulta.fecha_consulta.isoformat(),
+            "nombre_paciente": nombre_paciente,
+            "fecha_consulta": fecha_local.isoformat(), # Enviará: 2024-05-20T14:30:00-07:00
             "motivo": consulta.motivo,
             "sintomas": consulta.sintomas,
             "tiempo_enfermedad": consulta.tiempo_enfermedad,
