@@ -44,4 +44,5 @@ class PacienteEspera(db.Model):
     nombre = db.Column(db.String(60), nullable=False)
     numero_afiliacion = db.Column(db.String(8), unique=True, nullable=False)
     creado = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    area = db.Column(db.String(15), nullable=True)
     estado = db.Column(db.String(1), nullable=False)

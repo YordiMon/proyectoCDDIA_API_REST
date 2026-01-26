@@ -101,6 +101,7 @@ def crear_paciente_en_espera():
         nuevo_paciente = PacienteEspera(
             nombre=data['nombre'],
             numero_afiliacion=n_afiliacion,
+            area=data['area'],
             estado="1",
         )
         db.session.add(nuevo_paciente)
@@ -134,6 +135,7 @@ def obtener_pacientes_en_espera():
             "id": p.id,
             "nombre": p.nombre,
             "numero_afiliacion": p.numero_afiliacion,
+            "area": p.area,
             "estado": p.estado,
             "creado": fecha_formateada 
         })
