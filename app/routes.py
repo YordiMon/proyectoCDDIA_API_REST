@@ -73,6 +73,7 @@ def obtener_paciente_por_afiliacion(numero_afiliacion):
     try:
         paciente = models.Paciente.query.filter_by(numero_afiliacion=numero_afiliacion).first()
         
+        
         if not paciente:
             return jsonify({"error": "Paciente no encontrado"}), 404
         
@@ -148,16 +149,18 @@ def obtener_pacientes_en_espera():
         "pacientes": pacientes_json
     })
 
+#ruta para quitar paciente de la lista de espera
 @api_bp.route('/quitar_paciente/<int:id>', methods=['PUT'])
 def quitar_paciente(id):
     paciente = PacienteEspera.query.get(id)
     if not paciente:
-        return jsonify({"error": "Paciente no encontrado"}), 404
+        return jsonify({"error": "Paciente no encontrado"}), 400
 
     # Cambiamos el estado a 3 (Inactivo/Quitado)
     paciente.estado = "3"
     db.session.commit()
     return jsonify({"mensaje": f"Paciente {paciente.nombre} removido de la lista", "id": paciente.id}), 200
+
 
 #ruta para actualizar estado de paciente en espera
 @api_bp.route('/atender_paciente/<int:id>', methods=['PUT'])
@@ -333,3 +336,44 @@ def paciente_existe(numero_afiliacion):
             "error": "Error al verificar paciente",
             "detalle": str(e)
         }), 500
+
+
+
+#ruta para quitar paciente de la lista de espera por numero de afiliacion
+@api_bp.route('/quitar_paciente_por_afiliacion/<string:numero_afiliacion>', methods=['PUT'])
+def quitar_paciente_por_afiliacion(numero_afiliacion):
+    paciente = PacienteEspera.query.filter_by(numero_afiliacion=numero_afiliacion, estado='2').first()
+    if not paciente:
+        return jsonify({"error": "Paciente no encontrado o no está en estado '2'"}), 404
+
+    # Cambiamos el estado a 3 (Inactivo/Quitado)
+    paciente.estado = "3"
+    db.session.commit()
+    return jsonify({"mensaje": f"Paciente {paciente.nombre} removido de la lista", "id": paciente.id,
+    "numero_afiliacion": paciente.numero_afiliacion,
+    "estado": paciente.estado
+}), 200
+
+
+#ruta para actualizar estado de paciente en espera por numero de afiliacion
+@api_bp.route('/marcar_paciente/<string:numero_afiliacion>', methods=['PUT'])
+def marcar_paciente(numero_afiliacion):
+    paciente = PacienteEspera.query.filter_by(
+        numero_afiliacion=numero_afiliacion,
+        estado='1'  # En espera
+    ).first()
+
+    if not paciente:
+        return jsonify({
+            "marcado": False,
+            "mensaje": "Paciente no estaba en espera"
+        }), 200
+
+    paciente.estado = '2'  # En atención
+    db.session.commit()
+
+    return jsonify({
+        "marcado": True,
+        "id": paciente.id,
+        "mensaje": "Paciente marcado como en atención"
+    }), 200
