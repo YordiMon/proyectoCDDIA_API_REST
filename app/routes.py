@@ -4,6 +4,7 @@ from .models import db, Paciente, PacienteEspera
 from . import models
 from datetime import datetime
 import pytz
+from sqlalchemy import or_, and_
 
 api_bp = Blueprint('api', __name__)
 
@@ -90,14 +91,25 @@ def obtener_paciente_por_afiliacion(numero_afiliacion):
 def crear_paciente_en_espera():
     data = request.get_json()
     n_afiliacion = data.get('numero_afiliacion')
+    
+    # Buscamos si el paciente ya tiene un registro en la tabla de espera
     paciente_existente = PacienteEspera.query.filter_by(numero_afiliacion=n_afiliacion).first()
 
     if paciente_existente:
+        # ACTUALIZACIÓN: El paciente ya existía, así que "reciclamos" el registro
         paciente_existente.estado = "1"
         paciente_existente.nombre = data.get('nombre', paciente_existente.nombre)
+        # Aquí actualizamos el área con el nuevo dato enviado
+        paciente_existente.area = data.get('area', paciente_existente.area)
+        
         db.session.commit()
-        return jsonify({"mensaje": "Paciente re-ingresado a la lista de espera", "id": paciente_existente.id, "estado": "re-activado"}), 200
+        return jsonify({
+            "mensaje": f"Paciente re-ingresado a {paciente_existente.area}", 
+            "id": paciente_existente.id, 
+            "estado": "re-activado"
+        }), 200
     else:
+        # CREACIÓN: Es la primera vez que este paciente entra a la tabla de espera
         nuevo_paciente = PacienteEspera(
             nombre=data['nombre'],
             numero_afiliacion=n_afiliacion,
@@ -106,7 +118,11 @@ def crear_paciente_en_espera():
         )
         db.session.add(nuevo_paciente)
         db.session.commit()
-        return jsonify({"mensaje": "Nuevo paciente registrado con éxito", "id": nuevo_paciente.id, "estado": "nuevo"}), 201
+        return jsonify({
+            "mensaje": f"Nuevo paciente registrado en {nuevo_paciente.area}", 
+            "id": nuevo_paciente.id, 
+            "estado": "nuevo"
+        }), 201
 
 #ruta para obtener lista de pacientes en espera
 @api_bp.route('/lista_pacientes_en_espera', methods=['GET'])
@@ -356,3 +372,52 @@ def paciente_existe(numero_afiliacion):
             "error": "Error al verificar paciente",
             "detalle": str(e)
         }), 500
+
+@api_bp.route('/api/pacientes/buscar-historial', methods=['GET'])
+def buscar_pacientes_historial():
+    query_text = request.args.get('q', '')
+    
+    if not query_text or len(query_text) < 2:
+        return jsonify([])
+
+    # Realizamos la búsqueda con un JOIN
+    resultados = (
+        PacienteEspera.query
+        # 1. Unimos con la tabla Paciente basándonos en el número de afiliación
+        .join(Paciente, PacienteEspera.numero_afiliacion == Paciente.numero_afiliacion)
+        # 2. Aplicamos los filtros
+        .filter(
+            and_(
+                PacienteEspera.estado == '3',
+                or_(
+                    PacienteEspera.numero_afiliacion.ilike(f'%{query_text}%'),
+                    PacienteEspera.nombre.ilike(f'%{query_text}%')
+                )
+            )
+        )
+        .limit(10)
+        .all()
+    )
+
+    return jsonify([{
+        'id': p.id,
+        'nombre': p.nombre,
+        'numero_afiliacion': p.numero_afiliacion,
+        'area': p.area,
+        'estado': p.estado
+    } for p in resultados])
+
+#ruta para quitar paciente de la lista de espera por numero de afiliacion
+@api_bp.route('/quitar_paciente_por_afiliacion/<string:numero_afiliacion>', methods=['PUT'])
+def quitar_paciente_por_afiliacion(numero_afiliacion):
+    paciente = PacienteEspera.query.filter_by(numero_afiliacion=numero_afiliacion, estado='2').first()
+    if not paciente:
+        return jsonify({"error": "Paciente no encontrado o no está en estado '2'"}), 404
+
+    # Cambiamos el estado a 3 (Inactivo/Quitado)
+    paciente.estado = "3"
+    db.session.commit()
+    return jsonify({"mensaje": f"Paciente {paciente.nombre} removido de la lista", "id": paciente.id,
+    "numero_afiliacion": paciente.numero_afiliacion,
+    "estado": paciente.estado
+}), 200
