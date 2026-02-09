@@ -4,7 +4,7 @@ from .models import db, Paciente, PacienteEspera
 from . import models
 from datetime import datetime
 import pytz
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func, extract, text, cast, Date, distinct, case
 
 api_bp = Blueprint('api', __name__)
 
@@ -100,12 +100,10 @@ def crear_paciente_en_espera():
         # ACTUALIZACIÓN: El paciente ya existía, así que "reciclamos" el registro
         paciente_existente.estado = "1"
         paciente_existente.nombre = data.get('nombre', paciente_existente.nombre)
-        # Aquí actualizamos el área con el nuevo dato enviado
-        paciente_existente.area = data.get('area', paciente_existente.area)
         
         db.session.commit()
         return jsonify({
-            "mensaje": f"Paciente re-ingresado a {paciente_existente.area}", 
+            "mensaje": f"Paciente re-ingresado", 
             "id": paciente_existente.id, 
             "estado": "re-activado"
         }), 200
@@ -114,13 +112,12 @@ def crear_paciente_en_espera():
         nuevo_paciente = PacienteEspera(
             nombre=data['nombre'],
             numero_afiliacion=n_afiliacion,
-            area=data['area'],
             estado="1",
         )
         db.session.add(nuevo_paciente)
         db.session.commit()
         return jsonify({
-            "mensaje": f"Nuevo paciente registrado en {nuevo_paciente.area}", 
+            "mensaje": f"Nuevo paciente registrado", 
             "id": nuevo_paciente.id, 
             "estado": "nuevo"
         }), 201
@@ -152,7 +149,6 @@ def obtener_pacientes_en_espera():
             "id": p.id,
             "nombre": p.nombre,
             "numero_afiliacion": p.numero_afiliacion,
-            "area": p.area,
             "estado": p.estado,
             "creado": fecha_formateada 
         })
@@ -198,6 +194,7 @@ def atender_paciente(id):
 @api_bp.route('/consultas', methods=['POST'])
 def crear_consulta():
     data = request.get_json()
+    
     # Definimos la zona horaria de Sonora
     sonora_tz = pytz.timezone('America/Hermosillo')
 
@@ -210,27 +207,33 @@ def crear_consulta():
     if not paciente_id or not motivo:
         return jsonify({"error": "paciente_id y motivo son requeridos"}), 400
 
-    # --- PROCESAMIENTO DE FECHA LOCAL ---
+    # --- PROCESAMIENTO DE FECHA CON ALTA PRECISIÓN (MICROSEGUNDOS) ---
     fecha_raw = data.get('fecha_consulta')
     try:
         if fecha_raw:
-            # Eliminamos la 'Z' (si existe) para que fromisoformat no la mande a UTC
-            fecha_dt = datetime.fromisoformat(fecha_raw.replace('Z', ''))
-            # Localizamos la fecha como "Hora de Sonora"
-            fecha_dt = sonora_tz.localize(fecha_dt)
+            # Reemplazamos 'Z' por nada para procesar como local si es necesario
+            # fromisoformat detecta automáticamente los microsegundos si vienen en el string
+            clean_date = fecha_raw.replace('Z', '')
+            fecha_dt = datetime.fromisoformat(clean_date)
+            
+            # Si el string no traía información de zona horaria, le asignamos Sonora
+            if fecha_dt.tzinfo is None:
+                fecha_dt = sonora_tz.localize(fecha_dt)
         else:
-            # Si no hay fecha, capturamos el "Ahora" de Sonora directamente
+            # datetime.now() captura la precisión máxima (microsegundos) del sistema
             fecha_dt = datetime.now(sonora_tz)
+            
     except Exception as e:
         return jsonify({"error": "Formato de fecha inválido", "detalle": str(e)}), 400
 
+    # Crear el objeto del modelo
     nueva_consulta = models.Consulta(
         paciente_id=paciente_id,
-        fecha_consulta=fecha_dt, # SQLAlchemy guardará con la info de zona horaria
+        fecha_consulta=fecha_dt,  # Se guarda con precisión de microsegundos
         motivo=motivo,
         sintomas=data.get('sintomas'),
         tiempo_enfermedad=data.get('tiempo_enfermedad'),
-        presion=data.get('presion'), # Recibido desde consultaData en React
+        presion=data.get('presion'),
         frecuencia_cardiaca=data.get('frecuencia_cardiaca'),
         frecuencia_respiratoria=data.get('frecuencia_respiratoria'),
         temperatura=data.get('temperatura'),
@@ -244,10 +247,14 @@ def crear_consulta():
     try:
         db.session.add(nueva_consulta)
         db.session.commit()
+        
+        # Respondemos con la fecha formateada para confirmar la precisión
         return jsonify({
             "message": "Consulta creada exitosamente",
-            "consulta_id": nueva_consulta.id
+            "consulta_id": nueva_consulta.id,
+            "fecha_registrada": fecha_dt.isoformat() # Verás los microsegundos aquí
         }), 201
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error de base de datos", "detalle": str(e)}), 500
@@ -406,7 +413,6 @@ def buscar_pacientes_historial():
         'id': p.id,
         'nombre': p.nombre,
         'numero_afiliacion': p.numero_afiliacion,
-        'area': p.area,
         'estado': p.estado
     } for p in resultados])
 
@@ -494,3 +500,78 @@ def editar_paciente(id):
             "error": "Error al actualizar paciente",
             "detalle": str(e)
         }), 400
+
+        
+@api_bp.route('/stats/pacientes-atendidos', methods=['GET'])
+def obtener_estadisticas_hermosillo():
+    try:
+        # 1. Parámetros de la URL
+        periodo = request.args.get('periodo', 'month') 
+        fecha_inicio = request.args.get('fecha_inicio')
+        fecha_fin = request.args.get('fecha_fin')
+
+        tz_sonora = 'MST'
+        # Convertimos la fecha de la DB a la zona horaria local (Sonora)
+        fecha_local = func.timezone(tz_sonora, func.timezone('UTC', models.Consulta.fecha_consulta))
+
+        # 2. Definición de unidad de tiempo (Día, Semana, Mes o Año)
+        if periodo == 'week':
+            # Cálculo de semana del mes: (día - 1) / 7 + 1
+            unidad_tiempo = (func.floor((extract('day', fecha_local) - 1) / 7) + 1).label('unidad_tiempo')
+        else:
+            unidad_tiempo = extract(periodo, fecha_local).label('unidad_tiempo')
+
+        # 3. Consulta Principal
+        # Usamos distinct() dentro de count para contar PACIENTES únicos, no consultas.
+        # La sintaxis case((condicion, valor), else_=None) es la requerida por SQLAlchemy 2.0+
+        query = db.session.query(
+            unidad_tiempo,
+            extract('month', fecha_local).label('mes'),
+            extract('year', fecha_local).label('anio'),
+            func.count(distinct(models.Consulta.paciente_id)).label('total'),
+            func.count(distinct(
+                case((models.Paciente.sexo == 'Masculino', models.Consulta.paciente_id), else_=None)
+            )).label('hombres'),
+            func.count(distinct(
+                case((models.Paciente.sexo == 'Femenino', models.Consulta.paciente_id), else_=None)
+            )).label('mujeres')
+        ).join(models.Paciente, models.Consulta.paciente_id == models.Paciente.id)
+
+        # 4. Filtros Dinámicos Inclusivos
+        # El frontend (TSX) ya envía YYYY-MM-DD, así que el cast a Date funciona perfecto
+        if fecha_inicio and fecha_inicio.strip():
+            query = query.filter(cast(fecha_local, Date) >= fecha_inicio)
+        
+        if fecha_fin and fecha_fin.strip():
+            query = query.filter(cast(fecha_local, Date) <= fecha_fin)
+
+        # 5. Agrupación y Orden Cronológico
+        group_cols = [text('anio'), text('mes')]
+        if periodo in ['day', 'week']:
+            group_cols.append(text('unidad_tiempo'))
+        
+        stats = query.group_by(*group_cols).order_by(*group_cols).all()
+
+        # 6. Formateo de Respuesta
+        resultado = [
+            {
+                "periodo": int(s.unidad_tiempo),
+                "mes": int(s.mes),
+                "anio": int(s.anio),
+                "total": s.total,
+                "hombres": s.hombres,
+                "mujeres": s.mujeres
+            } for s in stats
+        ]
+
+        return jsonify(resultado), 200
+
+    except Exception as e:
+        print(f"Error en stats: {str(e)}") # Log para debug en consola
+        return jsonify({"error": "Error interno", "detalle": str(e)}), 500
+
+
+
+
+        # 2026-02-05T17:02:04.012860-07:00
+        # 2025-01-20T21:30:00-07:00
