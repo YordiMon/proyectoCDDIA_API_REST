@@ -500,8 +500,7 @@ def editar_paciente(id):
             "error": "Error al actualizar paciente",
             "detalle": str(e)
         }), 400
-
-        
+    
 @api_bp.route('/stats/pacientes-atendidos', methods=['GET'])
 def obtener_estadisticas_hermosillo():
     try:
