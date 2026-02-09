@@ -455,6 +455,52 @@ def marcar_paciente(numero_afiliacion):
         "mensaje": "Paciente marcado como en atención"
     }), 200
 
+
+@api_bp.route('/editar_paciente/<int:id>', methods=['PUT'])
+def editar_paciente(id):
+    data = request.get_json()
+
+    paciente = Paciente.query.get(id)
+    if not paciente:
+        return jsonify({"error": "Paciente no encontrado"}), 404
+
+    try:
+        # Fecha de nacimiento
+        fecha_nacimiento = data.get('fecha_nacimiento')
+        if fecha_nacimiento:
+            paciente.fecha_nacimiento = datetime.strptime(
+                fecha_nacimiento, '%Y-%m-%d'
+            ).date()
+
+        # Campos editables
+        paciente.nombre = data.get('nombre', paciente.nombre)
+        paciente.sexo = data.get('sexo', paciente.sexo)
+        paciente.tipo_sangre = data.get('tipo_sangre', paciente.tipo_sangre)
+        paciente.recibe_donaciones = data.get('recibe_donaciones', paciente.recibe_donaciones)
+        paciente.direccion = data.get('direccion', paciente.direccion)
+        paciente.celular = data.get('celular', paciente.celular)
+        paciente.contacto_emergencia = data.get('contacto_emergencia', paciente.contacto_emergencia)
+        paciente.enfermedades = data.get('enfermedades', paciente.enfermedades)
+        paciente.alergias = data.get('alergias', paciente.alergias)
+        paciente.cirugias_previas = data.get('cirugias_previas', paciente.cirugias_previas)
+        paciente.medicamentos_actuales = data.get('medicamentos_actuales', paciente.medicamentos_actuales)
+
+        
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Paciente actualizado correctamente",
+            "id": paciente.id
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "Error al actualizar paciente",
+            "detalle": str(e)
+        }), 400
+    
 @api_bp.route('/stats/pacientes-atendidos', methods=['GET'])
 def obtener_estadisticas_hermosillo():
     try:
